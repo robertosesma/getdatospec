@@ -25,6 +25,7 @@ import org.apache.pdfbox.pdmodel.interactive.form.PDCheckBox;
 import org.apache.pdfbox.pdmodel.interactive.form.PDComboBox;
 import org.apache.pdfbox.pdmodel.interactive.form.PDField;
 import org.apache.pdfbox.pdmodel.interactive.form.PDTextField;
+import org.apache.commons.io.FileUtils;
 
 
 public class ExtractMethods {
@@ -282,7 +283,10 @@ public class ExtractMethods {
 			PDDocument pdf = PDDocument.load(new File(dir));
 		    PDAcroForm form = pdf.getDocumentCatalog().getAcroForm();
 			PDComboBox co = (PDComboBox) form.getField("NOTA");
-		    toClip(co.getValue().get(0));
+			File f = new File(dir);
+			File t = new File(f.getParent() + "/NOTA.txt");
+			FileUtils.writeStringToFile(t, co.getValue().get(0), Charset.defaultCharset());
+		    //toClip(co.getValue().get(0));
             
             // close pdf form
             pdf.close();
