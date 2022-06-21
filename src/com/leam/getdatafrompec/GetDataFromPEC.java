@@ -30,6 +30,8 @@ public class GetDataFromPEC {
         if (command.equals("getP")) extract.getP(dir, args[2], args[3]);
         // params: dir, periodo, curso
         if (command.equals("getPIO1")) extract.getPIO1(dir, args[2], args[3]);
+        // PECs con errores de campo
+        if (command.equals("getnames_error")) extract.getnames_error(dir);
 	}
 
 }

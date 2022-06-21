@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -716,6 +717,148 @@ public class ExtractMethods {
 		}
 	}
 	
+	public void getnames_error(String dir) throws IOException { 
+        // get all the pdf files of dir
+        File folder = new File(dir);
+        FilenameFilter pdfFilter;
+        pdfFilter = (File dir1, String name) -> { return name.toLowerCase().endsWith(".pdf"); };
+        File[] PECs = folder.listFiles(pdfFilter);
+
+        boolean lProblems = false;
+        boolean lComments = false;
+        boolean lfirst = true;
+        boolean lhonor = false;
+        boolean lcomentarios = false;
+        boolean lape1 = false;
+        boolean lape2 = false;
+        boolean lnom = false;
+        List<String> lines = new ArrayList<>();
+        List<String> mlines = new ArrayList<>();
+        List<String> comments = new ArrayList<>();
+        List<String> problems = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        List<String> memos = new ArrayList<>();
+        
+        String[] err = { "P02_D1_2", "P02_D2_2", "P02_D3_2", "P02_D4_2", "P02_D5_2", "P02_D6_2", "P02_D7_2", "P02_D8_2", 
+        				"P02_D7_3", "P02_D8_3", "P05_B1_2", "P05_B2_2", "P05_B3_2" };
+        String[] cor = { "P02_E01", "P02_E02", "P02_E03", "P02_E04", "P02_E05", "P02_E06", "P02_E07", "P02_E08", 
+				"P02_E09", "P02_E10", "P08_B1", "P08_B2", "P08_B3" };
+        
+        for (File file : PECs) {
+            if (file.isFile()) {
+            	// get dni from filename
+                String n = file.getName();
+                String dni = n.substring(n.lastIndexOf("_")+1,n.lastIndexOf("."));
+                
+                System.out.println(dni);
+
+                // open pdf form
+				PDDocument pdf = PDDocument.load(file);
+			    PDAcroForm form = pdf.getDocumentCatalog().getAcroForm();
+                
+			    String producer = pdf.getDocumentInformation().getProducer();		// get form producer                
+                if (form.getFields().size()>0) {
+                    if (!producer.substring(0,Math.min(11,producer.length())).equalsIgnoreCase("LibreOffice")) {
+                    	// if the producer is not LibreOffice, the PDF file may be corrupted
+                    	lProblems = true;
+                        problems.add(dni + "; " + producer);
+                    }
+                    
+                    if (lfirst) {
+                        // get form fields names and sort alphabetically
+        				for (PDField f : form.getFields()) {
+        					String name = f.getFullyQualifiedName();
+        					// search for corrected names
+        					if (Arrays.asList(err).contains(name)) {
+        						name = cor[Arrays.asList(err).indexOf(name)];        						
+        					}
+        					if (name.substring(0, 1).equalsIgnoreCase("P")) names.add(name);		// answers
+        					if (name.substring(0, 1).equalsIgnoreCase("M")) memos.add(name);		// memo fields
+        					if (name.equalsIgnoreCase("APE1")) lape1 = true;						// there's APE1 field
+        					if (name.equalsIgnoreCase("APE2")) lape2 = true;						// there's APE2 field
+        					if (name.equalsIgnoreCase("NOMBRE")) lnom = true;						// there's NOMBRE field
+        					if (name.equalsIgnoreCase("HONOR")) lhonor = true;						// there's HONOR field
+        					if (name.equalsIgnoreCase("COMENT")) lcomentarios = true;				// there's COMENT field
+        				}
+                        Collections.sort(names);
+                        Collections.sort(memos);
+                        lfirst = false;
+                    }
+                    
+                    if (lcomentarios) {
+	                    // build COMMENTS section
+	                    if (!form.getField("COMENT").getValueAsString().isEmpty()) {
+	                        lComments = true;
+	                        comments.add(dni + ":" + form.getField("COMENT").getValueAsString() + "\n");
+	                    }
+                    }
+                    // header with identification data
+                    String c = (lape1 ? "'" + form.getField("APE1").getValueAsString() + "'" : "null") + "," +
+                    		(lape2 ? "'" + form.getField("APE2").getValueAsString() + "'" : "null") + "," +
+                    		(lnom ? "'" + form.getField("NOMBRE").getValueAsString() + "'" : "null") + "," +
+                    		"'" + dni + "'";
+                    if (lhonor) {
+                    	PDCheckBox honor = (PDCheckBox) form.getField("HONOR");
+                        c = c + (honor.isChecked() ? ",1" : ",0");
+                    }
+
+                    // loop through the sorted answers and get the contents
+                    for (String name : names) {
+                    	// get the corrected field name
+    					if (Arrays.asList(cor).contains(name)) {
+    						name = err[Arrays.asList(cor).indexOf(name)];        						
+    					}
+
+                    	PDField f = form.getField(name);
+                		if (f instanceof PDTextField) {
+                			PDTextField ed = (PDTextField) f;				// text field: numeric or memo
+                			c = c + ",'" + ed.getValue().replace(".", ",") + "'";
+                		}
+                		if (f instanceof PDComboBox) {
+                			PDComboBox co = (PDComboBox) f;					// combobox field: closed answer
+                			c = c + ",'" + co.getValue().get(0) + "'";
+                		}
+                    }
+                    lines.add(c);
+                    
+                    if (!memos.isEmpty()) {
+                    	// loop through the sorted memos and get the contents
+                        String m = "'" + dni + "'";
+	                    for (String name : memos) {
+	                    	PDTextField ed = (PDTextField) form.getField(name);
+	                		m = m + ",'" + ed.getValue().replace("'", "''") + "'";
+                		}
+	                    mlines.add(m);
+                	}
+                } else {
+                	// if there are no fields on the form the PDF file may be corrupted
+                    lProblems = true;
+                    if (form.getFields().isEmpty()) {
+                        problems.add(dni + "; no fields");
+                    }
+                }
+                
+                // close pdf form
+                pdf.close();
+                pdf = null;
+                form = null; 
+            }
+        }
+
+        // save data
+        Files.write(Paths.get(dir + "/datos_pecs.txt"), lines, Charset.forName("UTF-8"));
+        // save comments, if any
+        if (lComments) Files.write(Paths.get(dir + "/comentarios.txt"), comments, Charset.forName("UTF-8"));
+        // save problems, if any
+        if (lProblems) Files.write(Paths.get(dir + "/errores.txt"), problems, Charset.forName("UTF-8"));
+        // save memos, if any
+        if (!memos.isEmpty()) Files.write(Paths.get(dir + "/memos.txt"), mlines, Charset.forName("UTF-8"));
+
+        JOptionPane.showMessageDialog(null, "Proceso finalizado." +
+                (lComments ? " Hay comentarios." : "") + 
+                (lProblems ? " Hay errores." : ""));
+	}
+
 
 	public void toClip(String s) {
 		Clipboard clip = Toolkit.getDefaultToolkit().getSystemClipboard();
